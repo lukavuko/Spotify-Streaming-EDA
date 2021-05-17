@@ -1,6 +1,6 @@
 # Modeling Spotify User Behaviour
 
-Welcome to my machine learning demo (in progress) using my own and an anonymous users' Spotify streaming and library data.
+Welcome to my machine learning demo (in progress) using my own and an anonymous users' Spotify streaming and library data!
 
 Goal:
 - Predict song recommendations from user music preferences.
