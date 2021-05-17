@@ -2,6 +2,7 @@
 title: "Using Raw Streaming Data to Collect Deeper Data Attributes"
 author: "Luka Vukovic"
 output:
+  pdf_document: default
   html_document:
     df_print: paged
 ---
@@ -40,8 +41,8 @@ import_jsons <- function(path) {
     RawSpotify
 }
 
-usr1 <- import_jsons('../Data/User1')
-usr2 <- import_jsons('../Data/User2')
+usr1 <- import_jsons('Raw_Data/User1')
+usr2 <- import_jsons('Raw_Data/User2')
 
 c('File Names:', names(usr1))
 c('File Names:', names(usr2))

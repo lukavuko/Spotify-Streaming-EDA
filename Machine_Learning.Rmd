@@ -3,9 +3,9 @@ title: "Modeling Spotify User Behaviour"
 author: "Luka Vukovic"
 date: "11/05/2021"
 output:
+  pdf_document: default
   html_document:
     df_print: paged
-  pdf_document: default
 ---
 
 ```{r message=FALSE, warning=FALSE, include=TRUE}
@@ -199,7 +199,7 @@ all_streams %>%
   scale_y_continuous(name = 'Hours Played (solid)', limits = c(0,8), breaks = seq(0,10,2),
                      sec.axis = sec_axis(name = 'Songs Played (dotted)', ~.*20, breaks = seq(0,200,25), )) +
   
-  ggtitle('3-Week Average Play Time and Play Counts for Eric and Luka',
+  ggtitle('2-Week Average Play Time and Play Counts for Eric and Luka',
           subtitle = 'Jan 20, 2020 - Jan 22, 2021') + 
   
   scale_color_brewer(palette = 'Dark2') +
@@ -273,26 +273,24 @@ fviz_pca_ind(gens_pca, geom.ind = "point", pointsize = 0.2)
 ```{r}
 library(teigen)
 
-obj1 <- teigen(gens_pca$ind$cos2[,1:2], Gs = 1:5, model = 'UCCU', scale = FALSE, verbose = FALSE)
-obj2 <- teigen(usr1_pca$ind$cos2[,1:2], Gs = 1:5, model = 'UCCU', scale = FALSE, verbose = FALSE)
-obj3 <- teigen(usr2_pca$ind$cos2[,1:2], Gs = 1:5, model = 'UCCU', scale = FALSE, verbose = FALSE)
-plot(obj1, xmarg=1, ymarg=7, what="contour")
-plot(obj2, xmarg=1, ymarg=7, what="contour")
-plot(obj3, xmarg=1, ymarg=7, what="contour")
+#obj1 <- teigen(gens_pca$ind$cos2[,1:2], Gs = 1:5, model = 'UCCU', scale = FALSE, verbose = FALSE)
+#obj2 <- teigen(usr1_pca$ind$cos2[,1:2], Gs = 1:5, model = 'UCCU', scale = FALSE, verbose = FALSE)
+#obj3 <- teigen(usr2_pca$ind$cos2[,1:2], Gs = 1:5, model = 'UCCU', scale = FALSE, verbose = FALSE)
+#plot(obj1, xmarg=1, ymarg=7, what="contour")
+#plot(obj2, xmarg=1, ymarg=7, what="contour")
+#plot(obj3, xmarg=1, ymarg=7, what="contour")
 
 
 
 ```
 
 
-
 ## Supervised Learning 
 
-
-Predicting genres on recent music history
-
+Predicting genres on audio features
 
 
-Modeling daily, weekly, and monthly listening habits
+## Modeling daily, weekly, and monthly listening habits
 
+Modeling play time, and specific audio feature play time
 
