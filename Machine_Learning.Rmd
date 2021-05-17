@@ -1,0 +1,298 @@
+---
+title: "Modeling Spotify User Behaviour"
+author: "Luka Vukovic"
+date: "11/05/2021"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r message=FALSE, warning=FALSE, include=TRUE}
+library(tidyverse)
+library(data.table)
+library(glue)
+library(lubridate)
+
+# PCA
+library("FactoMineR")
+library("factoextra")
+#library(psych)
+
+# For visualization
+library(cowplot)
+library(ggplot2)
+library(quantreg)
+library(tidyquant) ## rolling average for geom_smooth
+library(grid)
+
+# Themes
+library(ggthemes)
+library(egg)
+library(RColorBrewer)
+```
+
+## Data Exploration
+```{r}
+# User 1
+usr1_lib <- read.csv('Enhanced_Data/User1/usr1_lib.csv')
+usr1_streams <- read.csv('Enhanced_Data/User1/usr1_streams.csv')
+
+# User 2
+usr2_lib <- read.csv('Enhanced_Data/User2/usr2_lib.csv')
+usr2_streams <- read.csv('Enhanced_Data/User2/usr2_streams.csv')
+
+data <- list(usr1_lib, usr1_streams, usr2_lib, usr2_streams)
+```
+
+- Most undefined rows that the API couldn't retrieve information for have been removed in the original data acquisition file.
+- It seems just a few rows still contain na values but will be removed.
+- Our cleanup function also scales the data for later processing.
+
+```{r}
+cleanup <- function(df) {
+  # Keep only rows without NA values
+  df <- df[!rowSums(is.na(df)) >= 1, ]
+  df
+}
+
+# Rows including NA
+unlist(lapply(data, nrow))
+
+# Rows excluding NA
+clean_data <- lapply(data, cleanup)
+unlist(lapply(clean_data, nrow))
+
+```
+
+```{r}
+top_100_songs <- function(streaming_frame) {
+  summary_streams <- streaming_frame %>%
+    group_by(trackName, artistName, # main vars
+             danceability, energy, key, loudness, mode, speechiness, acousticness, instrumentalness, liveness, valence, tempo, time_signature) %>%
+    summarise(plays = n(), hoursPlayed = sum(msPlayed)/(1000*60*60))
+  
+  top_tracks <- head(summary_streams[order(summary_streams$hoursPlayed, decreasing = TRUE), ], 100)
+  top_tracks
+}
+
+top_100_genres <- function(lib_frame) {
+  summary_lib <- lib_frame %>%
+    group_by(genres) %>%
+    summarise(instances = n())
+  
+  # need n_songs to get genre occurence across the library
+  songs <- lib_frame %>%
+    group_by(id) %>%
+    summarise()
+  
+  summary_lib$`%occurence` <- round(100*summary_lib$instances / nrow(songs), 2)
+  top_genres <- head(summary_lib[order(summary_lib$instances, decreasing = TRUE), ], 100)
+  top_genres
+}
+
+top_100_songs(clean_data[[2]])
+top_100_songs(clean_data[[4]])
+
+top_100_genres(clean_data[[1]])
+top_100_genres(clean_data[[3]])
+
+```
+
+## Visualizing Average Daily Play Time
+
+```{r message=FALSE, warning=FALSE}
+
+# Function for binding user streaming data
+stream_together <- function(frames) {
+  n <- length(frames)
+  for (i in 1:n) {
+    frames[[i]] <- frames[[i]] %>%
+      group_by(endTime, trackName, artistName, msPlayed, # main vars
+               danceability, energy, key, loudness, mode,
+               speechiness, acousticness, instrumentalness,
+               liveness, valence, tempo, time_signature) %>%
+      summarise()
+    
+    frames[[i]]$minPlayed <- frames[[i]]$msPlayed/(1000*60)
+    frames[[i]] <- frames[[i]][-4]
+    frames[[i]]$user <- as.factor(glue('user{i}'))
+  }
+  frames <- rbindlist(frames)
+  frames
+}
+
+all_streams_UTC <- stream_together(clean_data[c(2,4)]) # Universal Standard Time
+
+# Manual adjustment for user timezones
+# This can only be done if one knows where the user has been when
+all_streams <- rbind(
+  # User 2 Ontario
+  all_streams_UTC %>% filter(user == "user2" & month(endTime) < 9) %>% 
+    mutate(endHour = (hour(endTime)-5) %% 24, endDate = date(endTime), week_of_year = week(date(endTime))), 
+  # User 2 British Columbia
+  all_streams_UTC %>% filter(user == "user2" & month(endTime) >= 9) %>%
+    mutate(endHour = (hour(endTime)-8) %% 24, endDate = date(endTime), week_of_year = week(date(endTime))),
+  # User 1 Ontario
+  all_streams_UTC %>% filter(user == "user1" & month(endTime) < 5) %>% 
+    mutate(endHour = (hour(endTime)-5) %% 24, endDate = date(endTime), week_of_year = week(date(endTime))),
+  # User 1 British Columbia
+  all_streams_UTC %>% filter(user == "user1" & month(endTime) >= 5) %>% 
+    mutate(endHour = (hour(endTime)-8) %% 24, endDate = date(endTime), week_of_year = week(date(endTime)))
+  )
+
+
+# Plotting
+tot_days <- as.numeric(max(all_streams$endDate) - min(all_streams$endDate))
+
+all_streams %>%
+  group_by(endHour, endDate, user) %>% 
+  summarise(hourdayPlayTime = sum(minPlayed)) %>% # total minutes played by hour by day
+  group_by(endHour, user) %>% 
+  summarise(avg = sum(hourdayPlayTime)/tot_days) %>% # avg minutes played by hour over all days
+            #n = n())  # days played at given hour
+            #q1 = quantile(c(hourdayPlayTime, rep(0, tot_days-n())), 0.5),  # quantiles including days without playtime
+            #q3 = quantile(c(hourdayPlayTime, rep(0, tot_days-n())), 0.8)) %>%
+
+  ggplot(aes(y = avg, x = endHour, color = user)) +
+  
+  geom_smooth(level = 0.95, method = loess, alpha = 0.1) +
+  geom_line(alpha = 1, size = 0.5, linetype  = 'dashed') +
+  geom_point(alpha = 1.2, shape = 16, size=1.2) +
+  
+  scale_x_continuous(name = 'Hour of Day', breaks=seq(0,24,2), limits = c(0,24)) +
+  scale_y_continuous(name = 'Average Minutes Played', breaks=seq(0, 20, 4), limits = c(0,13)) +
+  ggtitle('Average Music Playtime by Hour of the Day', subtitle = 'Jan 2020 - Jan 2021') +
+  scale_color_brewer(palette = 'Dark2') +
+  theme_article() +
+  theme(legend.title = element_blank(),
+        legend.position = c(0.94,0.92),
+        panel.grid.major = element_line(color = '#ededed'))
+```
+
+## Visualizing Play Time through the Year
+
+```{r}
+months <- c('Jan', 'Feb', 'March', 'April', 'May', 'June', 'July', 'Sept',
+            'Oct', 'Nov', 'Dec', 'Jan', 'Feb')
+
+tot_weeks <- length(unique(all_streams$week_of_year))
+
+all_streams %>%
+  group_by(week_of_year, endDate, user) %>% 
+  summarise(dailyPlayTime = sum(minPlayed)/60,
+            dailyPlays = n()) %>%
+  group_by(week_of_year, user) %>%
+  summarise(avg_weeklyPlayTime = mean(dailyPlayTime),
+            avg_weeklyPlays = mean(dailyPlays)) %>%
+  
+  ggplot(aes(x = week_of_year, color = user)) +
+  
+  #geom_line(aes(y=avg_weeklyPlayTime), linetype = 1, size = 1) +
+  #geom_line(aes(y=avg_weeklyPlays/16), linetype = 3, size = 0.7) +
+  
+  geom_ma(aes(y=avg_weeklyPlayTime), n = 2, linetype = 1, size = 1, alpha = 1.0) +
+  geom_ma(aes(y=avg_weeklyPlays/20), n = 2, linetype = 3, size = 0.7, alpha = 0.6) +
+  
+  scale_x_continuous(name = element_blank(), labels = months, breaks = seq(0, 57, 4.4167)) + 
+  
+  scale_y_continuous(name = 'Hours Played (solid)', limits = c(0,8), breaks = seq(0,10,2),
+                     sec.axis = sec_axis(name = 'Songs Played (dotted)', ~.*20, breaks = seq(0,200,25), )) +
+  
+  ggtitle('3-Week Average Play Time and Play Counts for Eric and Luka',
+          subtitle = 'Jan 20, 2020 - Jan 22, 2021') + 
+  
+  scale_color_brewer(palette = 'Dark2') +
+  
+  theme_article() +
+  
+  theme(legend.title = element_blank(),
+        legend.position = c(0.93,0.93),
+        axis.title.y.left = element_text(vjust = 3),
+        axis.title.y.right = element_text(vjust = 3, angle = -90),
+        panel.grid.major = element_line(color = '#ededed'))
+```
+
+
+
+
+## Unsupervised Exploration to find Emotional Groupings in Libraries
+
+- Genres do not form clear clusters
+- PC1 is related to energy/positivity/loudness in one direction and calmness in the other.
+- PC2 is related to duration/energy in one direction and mode in the other.
+- Ultimately, we won't be able to cluster music tastes into specific subgroups for either user.
+- Perhaps clusters may appear when comparing user data but it's not clear if they exist within user data.
+- Therefore, further clustering methods won't be performed.
+
+```{r}
+# Function to scale and remove non-numeric rows
+convenient_scale <- function(df) {
+  # Save genre classes
+  genres <- as.factor(df$genres)
+  # Scale numeric columns
+  df <- df %>% mutate_if(is.numeric, scale) %>% select_if(is.numeric)
+  # Readd genre classes
+  df$genres <- cbind(genres, df)
+}
+
+# Scale data
+usr1_lib_scaled <- convenient_scale(clean_data[[1]])
+usr2_lib_scaled <- convenient_scale(clean_data[[3]])
+
+# PCA
+usr1_pca <- PCA(usr1_lib_scaled[,-1], graph = FALSE)
+usr2_pca <- PCA(usr2_lib_scaled[,-1], graph = FALSE)
+
+# Skree plot
+fviz_eig(usr1_pca, addlabels = TRUE, ylim = c(0, 50))
+fviz_eig(usr2_pca, addlabels = TRUE, ylim = c(0, 50))
+
+
+fviz_pca_ind(usr1_pca, col.ind = "cos2", pointsize = 0.2, 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = FALSE) # Avoid text overlapping (slow if many points)
+
+fviz_pca_ind(usr2_pca, geom.ind = "point", pointsize = 0.2, addEllipses = TRUE,)
+
+
+# Check if average genre features alone cluster based on audio features
+# (summarize average audio features by genre)
+gens <- usr1_lib_scaled %>%
+  group_by(genres) %>%
+  summarise_all(mean) 
+
+# PCA on average genre feature
+gens_pca <- PCA(gens[,-1], ncp = 10, graph = FALSE)
+fviz_pca_ind(gens_pca, geom.ind = "point", pointsize = 0.2)
+
+```
+
+
+
+```{r}
+library(teigen)
+
+obj1 <- teigen(gens_pca$ind$cos2[,1:2], Gs = 1:5, model = 'UCCU', scale = FALSE, verbose = FALSE)
+obj2 <- teigen(usr1_pca$ind$cos2[,1:2], Gs = 1:5, model = 'UCCU', scale = FALSE, verbose = FALSE)
+obj3 <- teigen(usr2_pca$ind$cos2[,1:2], Gs = 1:5, model = 'UCCU', scale = FALSE, verbose = FALSE)
+plot(obj1, xmarg=1, ymarg=7, what="contour")
+plot(obj2, xmarg=1, ymarg=7, what="contour")
+plot(obj3, xmarg=1, ymarg=7, what="contour")
+
+
+
+```
+
+
+
+## Supervised Learning 
+
+
+Predicting genres on recent music history
+
+
+
+Modeling daily, weekly, and monthly listening habits
+
+
