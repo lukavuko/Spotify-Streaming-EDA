@@ -8,7 +8,7 @@ Goal:
 Current Status:
 - [x] Created functions using the Spotify API for rapidly extracting audio features and genre information from a user's streaming history and library. 
 - [x] Extracted audio features and genre information from 2 sets of streaming and library data.
-- [x] Created functions for retreiving top 100 genres in a user's library or streaming data.
+- [x] Created functions for retreiving top 100 genres and songs in user streaming data.
 - [x] Visualize when users listen to music during the day and year (add week as well)
 - [ ] Visualize if audio features of listened music changes throughout the day or week.
 - [ ] Engineer a feature for liked vs disliked songs as a predictor. Examples:
